@@ -2,8 +2,8 @@
 Blox Fruits Stock Telegram Bot
 --------------------------------
 Kaam: /stock bhejte hi bot 2 buttons deta hai - "Normal Stock" aur
-"Mirage Stock". Jo bhi dabayein, us category ka live stock bold +
-fruit-emoji ke saath dikha deta hai (bina rarity/price ke).
+"Mirage Stock". Jo bhi dabayein, us category ka live stock ek clean,
+Discord-jaisa card format me dikhata hai (emoji + bold naam + price).
 
 Setup:
 1. pip install -r requirements.txt
@@ -14,6 +14,7 @@ Setup:
 import os
 import re
 import logging
+from datetime import datetime, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -42,7 +43,7 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 STOCK_URL = "https://bloxfruitscode.com/blox-fruits-stock-live-right-now/"
 
-OWNER_LINE = "Owner: @xdsp18 (fruit perms, gamepass, etc. ke liye contact karein)"
+OWNER_LINE = "👑 Owner: @xdsp18 — fruit perms, gamepass, etc. ke liye contact karein"
 
 FRUIT_PATTERN = re.compile(
     r"([A-Z][A-Za-z\s]{1,20}?)\s+"
@@ -50,8 +51,6 @@ FRUIT_PATTERN = re.compile(
     r"Beli\s+([\d,]+)\s+Robux\s+([\d,]+)"
 )
 
-# Fruit naam (lowercase) -> emoji. Jo fruit list me nahi mile, unke liye
-# default emoji use hoga.
 FRUIT_EMOJIS = {
     "buddha": "🙏", "dark": "🌑", "light": "💡", "magma": "🌋",
     "ice": "❄️", "sand": "🏜️", "flame": "🔥", "smoke": "💨",
@@ -64,7 +63,7 @@ FRUIT_EMOJIS = {
     "mammoth": "🦣", "gas": "☠️", "creation": "🌱", "soul": "💀",
     "spirit": "👻", "control": "🧠", "falcon": "🦅", "chop": "🪓",
     "spin": "🌀", "rocket": "🚀", "t-rex": "🦖", "trex": "🦖",
-    "barrier": "🛡️", "leopard fruit": "🐆",
+    "Creation": "🛡️",
 }
 
 DEFAULT_EMOJI = "🍈"
@@ -75,10 +74,6 @@ def emoji_for(fruit_name: str) -> str:
 
 
 def scrape_stock():
-    """
-    Website se Normal aur Mirage stock nikalta hai.
-    Return: dict {"normal": [(name, rarity, beli, robux), ...], "mirage": [...]}
-    """
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     resp = requests.get(STOCK_URL, headers=headers, timeout=15)
     resp.raise_for_status()
@@ -104,35 +99,51 @@ def scrape_stock():
 
 
 def format_category(label: str, fruits: list) -> str:
-    lines = [f"<b>{label}</b>", ""]
+    header_emoji = "🍈" if label == "Normal Stock" else "✨"
+
+    lines = [f"{header_emoji} <b>BLOX FRUITS — {label.upper()}</b>", ""]
+
     if fruits:
-        for name, _rarity, _beli, _robux in fruits:
+        for name, _rarity, beli, robux in fruits:
             clean_name = name.strip()
-            lines.append(f"{emoji_for(clean_name)} <b>{clean_name}</b>")
+            lines.append(
+                f"{emoji_for(clean_name)} <b>{clean_name}</b>"
+                f"  —  💰 {beli} Beli  |  🎮 {robux} Robux"
+            )
     else:
         lines.append("Data nahi mila")
+
+    lines.append("")
+    now_str = datetime.now(timezone.utc).strftime("%d %b, %I:%M %p UTC")
+    lines.append(f"<i>Powered by GAMERBOT • {now_str}</i>")
     lines.append("")
     lines.append(OWNER_LINE)
     return "\n".join(lines)
 
 
-async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
+def stock_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("🍈 Normal Stock", callback_data="normal"),
-            InlineKeyboardButton("✨ Mirage Stock", callback_data="mirage"),
+            [
+                InlineKeyboardButton("🍈 Normal Stock", callback_data="normal"),
+                InlineKeyboardButton("✨ Mirage Stock", callback_data="mirage"),
+            ]
         ]
-    ]
+    )
+
+
+async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Konsa stock dekhna hai?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "🍇 <b>Blox Fruits Stock</b>\nKonsa dekhna hai?",
+        parse_mode="HTML",
+        reply_markup=stock_keyboard(),
     )
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    category = query.data  # "normal" ya "mirage"
+    category = query.data
     label = "Normal Stock" if category == "normal" else "Mirage Stock"
 
     try:
@@ -142,14 +153,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Scraping failed")
         text = f"Stock fetch nahi ho paya, error: {e}"
 
-    keyboard = [
-        [
-            InlineKeyboardButton("🍈 Normal Stock", callback_data="normal"),
-            InlineKeyboardButton("✨ Mirage Stock", callback_data="mirage"),
-        ]
-    ]
     await query.edit_message_text(
-        text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
+        text, parse_mode="HTML", reply_markup=stock_keyboard()
     )
 
 
