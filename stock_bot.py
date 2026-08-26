@@ -196,19 +196,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Namaste! /stock bhejein current Blox Fruits stock dekhne ke liye."
+        "⚔️ Yo! Main Zoro Stock Live hoon — Blox Fruits stock, ek second me.\n"
+        "/stock bhejo aur dekho Normal & Mirage me kya hai abhi!"
     )
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
     """UptimeRobot (ya koi bhi pinger) jab is URL ko hit karega, bot
-    zinda dikhega aur Render use sleep nahi karega."""
+    zinda dikhega aur Render use sleep nahi karega. GET aur HEAD dono
+    handle karta hai kyunki kai uptime tools HEAD bhejte hain."""
 
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
         self.wfile.write(b"Bot is alive")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
 
     def log_message(self, format, *args):
         pass  # server logs ko chup rakhta hai, taaki asli logs saaf dikhein
