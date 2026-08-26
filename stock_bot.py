@@ -14,6 +14,8 @@ Setup:
 import os
 import re
 import logging
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timezone
 
 import requests
@@ -198,6 +200,27 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+class _HealthHandler(BaseHTTPRequestHandler):
+    """UptimeRobot (ya koi bhi pinger) jab is URL ko hit karega, bot
+    zinda dikhega aur Render use sleep nahi karega."""
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bot is alive")
+
+    def log_message(self, format, *args):
+        pass  # server logs ko chup rakhta hai, taaki asli logs saaf dikhein
+
+
+def run_health_server():
+    port = int(os.environ.get("PORT", "10000"))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    logger.info(f"Health server chal raha hai port {port} par")
+    server.serve_forever()
+
+
 def stock_signature(stock: dict):
     """Sirf fruit names se ek chhota 'fingerprint' banata hai taaki
     naya scrape purane se compare kiya ja sake."""
@@ -240,6 +263,8 @@ async def check_stock_job(context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    threading.Thread(target=run_health_server, daemon=True).start()
+
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("stock", stock_command))
