@@ -41,6 +41,14 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
+# Jis group me automatic stock-refresh notifications jaani hain.
+GROUP_CHAT_ID = os.environ.get("GROUP_CHAT_ID", "-1002855405684")
+
+# Kitni der me bot background me stock check karega (seconds). Har check
+# me sirf ek website request hoti hai, jab tak stock badle na, group me
+# kuch bhi nahi bheja jaata.
+CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL_SECONDS", "120"))
+
 STOCK_URL = "https://bloxfruitscode.com/blox-fruits-stock-live-right-now/"
 
 OWNER_LINE = "👑 Owner: @xdsp18 — fruit perms, gamepass, etc. ke liye contact karein"
@@ -63,7 +71,6 @@ FRUIT_EMOJIS = {
     "mammoth": "🦣", "gas": "☠️", "creation": "🌱", "soul": "💀",
     "spirit": "👻", "control": "🧠", "falcon": "🦅", "chop": "🪓",
     "spin": "🌀", "rocket": "🚀", "t-rex": "🦖", "trex": "🦖",
-    "Creation": "🛡️",
 }
 
 DEFAULT_EMOJI = "🍈"
@@ -121,6 +128,33 @@ def format_category(label: str, fruits: list) -> str:
     return "\n".join(lines)
 
 
+def format_full_stock(stock: dict, refreshed: bool = False) -> str:
+    lines = []
+    if refreshed:
+        lines.append("🔔 <b>STOCK REFRESHED!</b>")
+        lines.append("")
+
+    for key, title, emoji in (("normal", "NORMAL STOCK", "🍈"), ("mirage", "MIRAGE STOCK", "✨")):
+        fruits = stock.get(key, [])
+        lines.append(f"{emoji} <b>{title}</b>")
+        if fruits:
+            for name, _rarity, beli, robux in fruits:
+                clean_name = name.strip()
+                lines.append(
+                    f"{emoji_for(clean_name)} <b>{clean_name}</b>"
+                    f"  —  💰 {beli} Beli  |  🎮 {robux} Robux"
+                )
+        else:
+            lines.append("Data nahi mila")
+        lines.append("")
+
+    now_str = datetime.now(timezone.utc).strftime("%d %b, %I:%M %p UTC")
+    lines.append(f"<i>Powered by GAMERBOT • {now_str}</i>")
+    lines.append("")
+    lines.append(OWNER_LINE)
+    return "\n".join(lines)
+
+
 def stock_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -164,11 +198,55 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def stock_signature(stock: dict):
+    """Sirf fruit names se ek chhota 'fingerprint' banata hai taaki
+    naya scrape purane se compare kiya ja sake."""
+    return (
+        tuple(sorted(name.strip() for name, *_ in stock.get("normal", []))),
+        tuple(sorted(name.strip() for name, *_ in stock.get("mirage", []))),
+    )
+
+
+async def check_stock_job(context: ContextTypes.DEFAULT_TYPE):
+    """Har CHECK_INTERVAL_SECONDS me chalta hai. Sirf tabhi group me
+    message bhejta hai jab stock pichli baar se badla ho."""
+    bot_data = context.application.bot_data
+
+    try:
+        stock = scrape_stock()
+    except Exception:
+        logger.exception("Background stock check fail hua")
+        return
+
+    new_sig = stock_signature(stock)
+    old_sig = bot_data.get("last_stock_signature")
+
+    if old_sig is None:
+        # Pehli baar chal raha hai -- baseline set karo, notify mat karo
+        bot_data["last_stock_signature"] = new_sig
+        logger.info("Baseline stock set ho gaya, ab se changes track honge")
+        return
+
+    if new_sig != old_sig:
+        bot_data["last_stock_signature"] = new_sig
+        text = format_full_stock(stock, refreshed=True)
+        try:
+            await context.bot.send_message(
+                chat_id=GROUP_CHAT_ID, text=text, parse_mode="HTML"
+            )
+            logger.info("Stock change detect hua, group me notify kar diya")
+        except Exception:
+            logger.exception("Group me message bhejna fail hua")
+
+
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("stock", stock_command))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.job_queue.run_repeating(
+        check_stock_job, interval=CHECK_INTERVAL_SECONDS, first=10
+    )
     logger.info("Bot start ho raha hai (polling mode)...")
     app.run_polling()
 
